@@ -1,9 +1,10 @@
 (ns webstat.http-server
   (:require
     [webstat.store :as store]
-    [webstat.http-client :refer [http-check]]
+    [webstat.http-client :refer [http-check start-checker!]]
     [hiccup.core :refer [html]]
-    [org.httpkit.server :as http]))
+    [org.httpkit.server :as http]
+    [clj-time.core :as t]))
 
 (def bootstrap-head
   (list
@@ -46,15 +47,20 @@
              [:th i])]]
          [:tbody
           (for [ep endpoint-list]
-            (let [check (http-check ep)]
+            (let [check (get-in @store/server-status
+                                [section-title ep])]
               [:tr
                [:td [:a {:href ep} ep]]
                [:td 
                 {:class (if (= 200 (:http-code check))
-                          "success" "warning")}
-                (:http-code check)]
+                          "success" "danger")}
+                (if (:http-code check)
+                  (:http-code check)
+                  "Down")]
                [:td (:total-time check)]
-               [:td "Just now."]]))]]])]]}))
+               [:td (t/in-seconds
+                     (t/interval
+                      (:time-start check) (t/now))) " seconds ago."]]))]]])]]}))
 
 (defn handler
   [request]
@@ -63,6 +69,13 @@
 
 (defn start-server
   [options]
-  (http/run-server
-    #'handler
-    options))
+  (let [checker-fn (start-checker! 60000)
+        http-fn (http/run-server #'handler options)]
+    (fn [] (checker-fn) (http-fn) nil)))
+
+
+(comment
+  
+  (def shutdown-fn (start-server {:port 8080}))
+
+  )
